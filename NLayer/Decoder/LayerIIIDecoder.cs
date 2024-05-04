@@ -168,7 +168,6 @@ namespace NLayer.Decoder
 
             internal HybridMDCT()
             {
-                Console.WriteLine("called Hybrid MDCT");
                 _prevBlock = new List<float[]>();
                 _nextBlock = new List<float[]>();
             }
