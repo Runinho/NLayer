@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 namespace NLayer.Decoder
 {
@@ -879,6 +880,7 @@ namespace NLayer.Decoder
         }
 
         // In C#, bit operations are faster than the tree traversal the spec is written for.
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static byte DecodeSymbol(BitReservoir br, int table)
         {
             // get the huffman node for decoding

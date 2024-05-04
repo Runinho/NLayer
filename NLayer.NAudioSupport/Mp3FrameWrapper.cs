@@ -132,7 +132,7 @@ namespace NLayer.NAudioSupport
             if (bitCount < 1 || bitCount > 32) throw new ArgumentOutOfRangeException("bitCount");
             while (_bitsRead < bitCount)
             {
-                if (_readOffset == _frame.FrameLength) throw new System.IO.EndOfStreamException();
+                if (_readOffset == _frame.FrameLength){ throw new System.IO.EndOfStreamException();}
 
                 var b = _frame.RawData[_readOffset++];
                 _bitBucket <<= 8;

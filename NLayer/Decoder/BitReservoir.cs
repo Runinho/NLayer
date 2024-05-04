@@ -165,7 +165,10 @@ namespace NLayer.Decoder
             if (count > 0)
             {
                 // make sure we have enough bits to skip
-                if (count > BitsAvailable) throw new ArgumentOutOfRangeException("count");
+                if (count > BitsAvailable)
+                {
+                    throw new ArgumentOutOfRangeException("count");
+                }
 
                 // now calculate the new positions
                 var offset = (8 - _bitsLeft) + count;

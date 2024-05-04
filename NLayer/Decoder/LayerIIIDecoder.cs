@@ -32,6 +32,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 
 namespace NLayer.Decoder
 {
@@ -48,6 +49,12 @@ namespace NLayer.Decoder
         class HybridMDCT
         {
             const float PI = (float)Math.PI;
+            
+            // for LongIMDCT
+            private float[] H = new float[17], h = new float[18], even = new float[9], odd = new float[9], even_idct = new float[9], odd_idct = new float[9];
+            
+            // for imdct_9pt;
+            float[] imdct_9pt_even_idct = new float[5], imdct_9pt_odd_idct = new float[4];
 
             static float[][] _swin;
 
@@ -128,6 +135,32 @@ namespace NLayer.Decoder
                                           1.146279281302667207853573927422985434532165527343750000000000e+01f
                                           };
 
+            private static float[] icos72_table_4ip1 =
+            {
+                5.019099187716736798492433990759309381246566772460937500000000e-01f,
+                5.176380902050414789528076653368771076202392578125000000000000e-01f,
+                5.516889594812458552652856269560288637876510620117187500000000e-01f,
+                6.103872943807280293526673631276935338973999023437500000000000e-01f,
+                7.071067811865474617150084668537601828575134277343750000000000e-01f,
+                8.717233978105488612087015098950359970331192016601562500000000e-01f,
+                1.183100791576249255498964885191526263952255249023437500000000e+00f,
+                1.931851652578135070115195048856548964977264404296875000000000e+00f,
+                5.736856622834929808618653623852878808975219726562500000000000e+00f,
+            };
+
+            private static float[] icos71_table_2i =
+            {
+                5.004763425816599609063928255636710673570632934570312500000000e-01f,
+                5.043144802900764167574720886477734893560409545898437500000000e-01f,
+                5.121397571572545714957414020318537950515747070312500000000000e-01f,
+                5.242645625704053236049162478593643754720687866210937500000000e-01f,
+                5.411961001461970122150546558259520679712295532226562500000000e-01f,
+                5.636909734331712051869089918909594416618347167968750000000000e-01f,
+                5.928445237170802961657045671017840504646301269531250000000000e-01f,
+                6.302362070051321651931175438221544027328491210937500000000000e-01f,
+                6.781708524546284921896699415810871869325637817382812500000000e-01f,
+            };
+            
             #endregion
 
             List<float[]> _prevBlock;
@@ -135,6 +168,7 @@ namespace NLayer.Decoder
 
             internal HybridMDCT()
             {
+                Console.WriteLine("called Hybrid MDCT");
                 _prevBlock = new List<float[]>();
                 _nextBlock = new List<float[]>();
             }
@@ -222,13 +256,29 @@ namespace NLayer.Decoder
                 }
             }
 
-            static void LongIMDCT(float[] invec, float[] outvec)
+            void LongIMDCT(float[] invec, float[] outvec)
             {
+                // is here the problem??
+                // moved variables to class
                 int i;
-                float[] H = new float[17], h = new float[18], even = new float[9], odd = new float[9], even_idct = new float[9], odd_idct = new float[9];
-
-                for (i = 0; i < 17; i++)
+                
+                var length = 17;
+                int remaining = length % Vector<float>.Count;
+                
+                for (i = 0; i < length - remaining; i += Vector<float>.Count)
+                {
+                    //H[i] = invec[i] + invec[i + 1];
+                    (new Vector<float>(invec, i) + new Vector<float>(invec, i+1)).CopyTo(H, i);
+                }
+                
+                for (i = length - remaining; i < length; i++)
+                {
                     H[i] = invec[i] + invec[i + 1];
+                }
+                // for (i = 0; i < 17; i++)
+                // {
+                //      H[i] = invec[i] + invec[i + 1];
+                // } 
 
                 even[0] = invec[0];
                 odd[0] = H[0];
@@ -242,26 +292,57 @@ namespace NLayer.Decoder
                 imdct_9pt(even, even_idct);
                 imdct_9pt(odd, odd_idct);
 
-                for (i = 0; i < 9; i++)
+                
+                length = 9;
+                remaining = length % Vector<float>.Count;
+                
+                for (i = 0; i < length-remaining; i += Vector<float>.Count)
+                {
+                    //ICOS36_A(i) = icos72_table[4 * i + 1] = icos72_table_4ip1[i]
+                    //odd_idct[i] *= ICOS36_A(i);
+                    var tmp = (new Vector<float>(odd_idct, i) * new Vector<float>(icos72_table_4ip1, i));
+                    tmp.CopyTo(odd_idct, i);
+                    
+                    //h[i] = (even_idct[i] + odd_idct[i]) * ICOS72_A(i);
+                    //ICOS72_A(i) = icos72_table[2 * i] = icos72_table_2i[i]
+                    ((new Vector<float>(even_idct, i) + tmp) * new Vector<float>(icos71_table_2i, i)).CopyTo(h, i);
+                }
+
+                for (i = length - remaining; i < length; i++)
                 {
                     odd_idct[i] *= ICOS36_A(i);
-                    h[i] = (even_idct[i] + odd_idct[i]) * ICOS72_A(i);
+                    h[i] = (even_idct[i] + odd_idct[i]) * ICOS72_A(i); 
                 }
+                
                 for ( /* i = 9 */ ; i < 18; i++)
                 {
                     h[i] = (even_idct[17 - i] - odd_idct[17 - i]) * ICOS72_A(i);
                 }
 
                 /* Rearrange the 18 values from the IDCT to the output vector */
-                outvec[0] = h[9];
-                outvec[1] = h[10];
-                outvec[2] = h[11];
-                outvec[3] = h[12];
-                outvec[4] = h[13];
-                outvec[5] = h[14];
-                outvec[6] = h[15];
-                outvec[7] = h[16];
-                outvec[8] = h[17];
+                
+                length = 9;
+                remaining = length % Vector<float>.Count;
+                for (i = 0; i < length - remaining; i += Vector<float>.Count)
+                {
+                    //outvec[0] = h[9];
+                    new Vector<float>(h, 9 + i).CopyTo(outvec, i);
+                }
+
+                for (i = length - remaining; i < 9; i++)
+                {
+                    outvec[i] = h[i + 9];
+                }
+
+                //outvec[0] = h[9];
+                //outvec[1] = h[10];
+                //outvec[2] = h[11];
+                //outvec[3] = h[12];
+                //outvec[4] = h[13];
+                //outvec[5] = h[14];
+                //outvec[6] = h[15];
+                //outvec[7] = h[16];
+                //outvec[8] = h[17];
 
                 outvec[9] = -h[17];
                 outvec[10] = -h[16];
@@ -294,10 +375,11 @@ namespace NLayer.Decoder
                 return icos72_table[4 * i + 1];
             }
 
-            static void imdct_9pt(float[] invec, float[] outvec)
+            void imdct_9pt(float[] invec, float[] outvec)
             {
+                float[] even_idct = imdct_9pt_even_idct; 
+                float[] odd_idct = imdct_9pt_odd_idct; 
                 int i;
-                float[] even_idct = new float[5], odd_idct = new float[4];
                 float t0, t1, t2;
 
                 /* BEGIN 5 Point IMDCT */
@@ -404,11 +486,16 @@ namespace NLayer.Decoder
             }
 
             const float sqrt32 = 0.8660254037844385965883020617184229195117950439453125f;
-
-            static void ShortIMDCT(float[] invec, int inIdx, float[] outvec)
+            
+            float[] ShortIMDCT_H = new float[6], ShortIMDCT_h = new float[6], ShortIMDCT_even_idct = new float[3], ShortIMDCT_odd_idct = new float[3];
+            void ShortIMDCT(float[] invec, int inIdx, float[] outvec)
             {
                 int i;
-                float[] H = new float[6], h = new float[6], even_idct = new float[3], odd_idct = new float[3];
+                float[] H = ShortIMDCT_H;
+                float[] h = ShortIMDCT_h;
+                float[] even_idct = ShortIMDCT_even_idct;
+                float[] odd_idct = ShortIMDCT_odd_idct;
+                //float[] H = new float[6], h = new float[6], even_idct = new float[3], odd_idct = new float[3];
                 float t0, t1, t2;
 
                 /* Preprocess the input to the two 3-point IDCT's */
